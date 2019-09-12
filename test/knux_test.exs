@@ -65,6 +65,13 @@ defmodule KnuxTest do
       assert "OK" = Knux.request(conn, %Knux.Request.Push{collection: "knux", bucket: "default", object: "object:1", text: "some text"})
     end
 
+    test "#push buffer overflow", %{conn: conn} do
+      iodata = make_long_text(1000)
+      object = IO.iodata_to_binary(["started "] ++ iodata ++ [" finished"])
+
+      assert {:error, :tcp_closed} = Knux.request(conn, %Knux.Request.Push{collection: "knux", bucket: "default", object: "object:2", text: object})
+    end
+
     test "#push async", %{conn: conn} do
       assert [{1, "OK"}, {2, "OK"}, {3, "OK"}] ==
         request_async(conn, 3, fn(idx) ->
@@ -248,5 +255,11 @@ defmodule KnuxTest do
     Enum.map(refs, fn(ref) ->
       assert {_idx, _reply} = Task.await(ref)
     end)
+  end
+
+  defp make_long_text(count) do
+    for i <- 0..count, into: [] do
+      "very long text that cause buffer overflow ##{i} "
+    end
   end
 end

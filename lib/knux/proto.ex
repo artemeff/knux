@@ -3,6 +3,7 @@ defmodule Knux.Proto do
 
   @crlf "\r\n"
   @crlf_iodata [?\r, ?\n]
+  @args ~r/(\w+)\((.*)\)/
 
   @doc ~S"""
   Packs a list of Elixir terms to a Sonic query.
@@ -18,7 +19,12 @@ defmodule Knux.Proto do
       "QUERY messages user:0dcde3a6 \"valerian saliou\" LIMIT(10)\r\n"
 
   """
-  @spec pack([binary | {:quoted, binary} | {binary, binary | integer}]) :: iodata
+  @spec pack(%Knux.Request{} | [binary | {:quoted, binary} | {binary, binary | integer}]) :: iodata
+
+  def pack(%Knux.Request{io_data: io_data}) do
+    pack(io_data)
+  end
+
   def pack(items) when is_list(items) do
     pack(items, [])
   end
@@ -100,6 +106,9 @@ defmodule Knux.Proto do
       iex> Knux.Proto.parse("CONNECTED <sonic-server v1.0.0>")
       {:ok, ["CONNECTED", "<sonic-server v1.0.0>"]}
 
+      iex> Knux.Proto.parse("STARTED search protocol(1) buffer(20000)")
+      {:ok, ["STARTED", "search", {"protocol", "1"}, {"buffer", "20000"}]}
+
       iex> Knux.Proto.parse("EVENT QUERY Bt2m2gYa conversation:71f3d63b conversation:6501e83a")
       {:ok, ["EVENT", "QUERY", "Bt2m2gYa", "conversation:71f3d63b", "conversation:6501e83a"]}
 
@@ -109,7 +118,21 @@ defmodule Knux.Proto do
     {:ok, ["CONNECTED", rest]}
   end
 
+  def parse(<<"STARTED ", rest::binary>>) do
+    [mode | arguments] = String.split(rest)
+    {:ok, ["STARTED", mode | parse_mode_args(arguments)]}
+  end
+
   def parse(binary) do
     {:ok, String.split(binary, " ")}
+  end
+
+  defp parse_mode_args(args) do
+    Enum.map(args, fn(arg) ->
+      case Regex.run(@args, arg) do
+        [_, name, param] -> {name, param}
+        _ -> arg
+      end
+    end)
   end
 end

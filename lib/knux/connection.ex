@@ -35,6 +35,9 @@ defmodule Knux.Connection do
       # buffer continuation function from Knux.Proto.unpack/1
       buffer_cont: nil,
 
+      # TODO support buffer overflow
+      buffer_overflow: nil,
+
       # list of `GenServer.call(request)` requests, that waited for reply
       await: %{},
 
@@ -79,7 +82,13 @@ defmodule Knux.Connection do
   end
 
   @impl true
-  def disconnect(_reason, state) do
+  def disconnect(reason, state) do
+    # TODO write `request` structure like `{:wait_pending, from, request}` and retry
+    case state.state do
+      {:wait_pending, from} -> GenServer.reply(from, {:error, reason})
+      _otherwise -> :skip
+    end
+
     {:backoff, 500, state}
   end
 
@@ -163,9 +172,15 @@ defmodule Knux.Connection do
     %State{state | state: :connected}
   end
 
-  defp handle_response(["STARTED", type | _], %State{state: :connected} = state) when type in ["search", "ingest", "control"] do
+  defp handle_response(["STARTED", _type, {"protocol", "1"}, {"buffer", size}], %State{state: :connected} = state) do
+    buffer_overflow =
+      case Integer.parse(size) do
+        {bytes, _rest} -> bytes
+        _ -> 20_000
+      end
+
     send(self(), :process_deferred)
-    %State{state | state: :ready}
+    %State{state | state: :ready, buffer_overflow: buffer_overflow}
   end
 
   defp handle_response(["PENDING", id], %State{state: {:wait_pending, from}} = state) do
@@ -241,6 +256,7 @@ defmodule Knux.Connection do
   end
 
   defp make_request(request, from, state) do
+    # TODO handle buffer_overflow argument to send chunked requests when they are too long
     iodata = encode_request(request)
     send_request(iodata, state)
 
@@ -252,6 +268,6 @@ defmodule Knux.Connection do
   end
 
   defp encode_request(request) do
-    Knux.Request.encode(request).request
+    Knux.Request.encode(request).io_data
   end
 end

@@ -12,6 +12,7 @@ defmodule Knux.Request.Macro do
 
     args_struct = Enum.map(args, &arg_to_struct/1)
     args_meta = Enum.zip(args_struct, args)
+    args_quoted = find_quoted(args)
 
     enforce = Enum.reduce(args, [], fn
       ({:optional, _, _}, acc) -> acc
@@ -32,6 +33,7 @@ defmodule Knux.Request.Macro do
             mode: unquote(mode),
             name: unquote(string),
             args: unquote(args_meta),
+            args_quoted: unquote(args_quoted),
             opts: unquote(opts_meta),
           }
         ]
@@ -57,5 +59,20 @@ defmodule Knux.Request.Macro do
 
   defp arg_to_struct(key) do
     key
+  end
+
+  defp find_quoted(args) do
+    case Enum.find(args, &find_quoted_fn/1) do
+      {_, _, [name]} -> name
+      _ -> nil
+    end
+  end
+
+  defp find_quoted_fn({:quoted, _, _}) do
+    true
+  end
+
+  defp find_quoted_fn(_) do
+    false
   end
 end
